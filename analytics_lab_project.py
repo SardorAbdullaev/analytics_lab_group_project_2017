@@ -15,7 +15,7 @@ import seaborn as sns
 pal = sns.color_palette()
 ###SOME DATA EXPLORATION
 #TRAINING SET
-df_train = pd.read_csv('train.csv')
+df_train = pd.read_csv("./train.csv")
 df_train.head()
 
 
