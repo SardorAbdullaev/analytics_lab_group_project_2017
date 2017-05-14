@@ -1,23 +1,50 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu May 04 21:49:28 2017
 
-@author: Sardor
-Forked from anoka
-"""
+# coding: utf-8
 
-#INITIALIZATION
-import numpy as np 
-import pandas as pd
+# # Identifying Duplicate Questions
+# 
+# Welcome to the Quora Question Pairs competition! Here, our goal is to identify which questions asked on [Quora](https://www.quora.com/), a quasi-forum website with over 100 million visitors a month, are duplicates of questions that have already been asked. This could be useful, for example, to instantly provide answers to questions that have already been answered. We are tasked with predicting whether a pair of questions are duplicates or not, and submitting a binary prediction against the logloss metric.
+# 
+
+# In[1]:
+
+import numpy as np
+import pandas as pd 
 import matplotlib.pyplot as plt
 import seaborn as sns
+get_ipython().magic('matplotlib inline')
 
 pal = sns.color_palette()
-###SOME DATA EXPLORATION
-#TRAINING SET
-df_train = pd.read_csv("./train.csv")
+#Pickle for later use
+#Dumping:
+#from cPickle import dump
+#output = open('t2.pkl', 'wb')
+#dump(t2, output, -1)
+#output.close()
+#Loading:
+#from cPickle import load
+#input = open('t2.pkl', 'rb')
+#tagger = load(input)
+#input.close()
+
+
+# 
+# ## Training set
+
+# In[3]:
+
+df_train = pd.read_csv('train.csv')
 df_train.head()
 
+
+# We are given a minimal number of data fields here, consisting of:
+# 
+# **`id`:** Looks like a simple rowID    
+# **`qid{1, 2}`:** The unique ID of each question in the pair    
+# **`question{1, 2}`:** The actual textual contents of the questions.    
+# **`is_duplicate`:** The **label** that we are trying to predict - whether the two questions are duplicates of each other.
+
+# In[4]:
 
 print('Total number of question pairs for training: {}'.format(len(df_train)))
 print('Duplicate pairs: {}%'.format(round(df_train['is_duplicate'].mean()*100, 2)))
@@ -34,22 +61,60 @@ plt.xlabel('Number of occurences of question')
 plt.ylabel('Number of questions')
 print()
 
-#Test Submission
+
+# In terms of questions, everything looks as I would expect here. Most questions only appear a few times, with very few questions appearing several times (and a few questions appearing many times). One question appears more than 160 times, but this is an outlier.
+# 
+# We can see that we have a 37% positive class in this dataset. Since we are using the [LogLoss](https://www.kaggle.com/wiki/LogarithmicLoss) metric, and LogLoss looks at the actual predicts as opposed to the order of predictions, we should be able to get a decent score by creating a submission predicting the mean value of the label.
+# 
+# ## Test Submission
+
+# In[ ]:
+
 from sklearn.metrics import log_loss
 
 p = df_train['is_duplicate'].mean() # Our predicted probability
 print('Predicted score:', log_loss(df_train['is_duplicate'], np.zeros_like(df_train['is_duplicate']) + p))
 
-df_test = pd.read_csv('../input/test.csv')
+df_test = pd.read_csv('test.csv')
 sub = pd.DataFrame({'test_id': df_test['test_id'], 'is_duplicate': p})
 sub.to_csv('naive_submission.csv', index=False)
 sub.head()
-#TEST SET
-df_test = pd.read_csv('../input/test.csv')
+
+
+# **0.55 on the leaderboard! Score!**
+# 
+# However, not all is well. The discrepancy between our local score and the LB one indicates that the distribution of values on the leaderboard is very different to what we have here, which could cause problems with validation later on in the competition.
+# 
+# According to this [excellent notebook by David Thaler](www.kaggle.com/davidthaler/quora-question-pairs/how-many-1-s-are-in-the-public-lb/notebook), using our score and submission we can calculate that we have about 16.5% positives in the test set. This is quite surprising to see, so it'll be something that will need to be taken into account in machine learning models.
+# 
+# Next, I'll take a quick peek at the statistics of the test data before we look at the text itself.
+# 
+# ## Test Set
+
+# In[8]:
+
+df_test = pd.read_csv('test.csv')
 df_test.head()
 
+
+# In[9]:
+
 print('Total number of question pairs for testing: {}'.format(len(df_test)))
-###TEXT ANALYSIS
+
+
+# Nothing out of the ordinary here. We are once again given rowIDs and the textual data of the two questions. It is worth noting that we are not given question IDs here however for the two questions in the pair.
+# 
+# It is also worth pointing out that the actual number of test rows are likely to be much lower than 2.3 million. According to the [data page](https://www.kaggle.com/c/quora-question-pairs/data), most of the rows in the test set are using auto-generated questions to pad out the dataset, and deter any hand-labelling. This means that the true number of rows that are scored could be very low.
+# 
+# We can actually see in the head of the test data that some of the questions are obviously auto-generated, as we get delights such as "How their can I start reading?" and "What foods fibre?". Truly insightful questions.
+# 
+# Now onto the good stuff - the text data!
+# ## Text analysis
+# 
+# First off, some quick histograms to understand what we're looking at. **Most analysis here will be only on the training set, to avoid the auto-generated questions**
+
+# In[10]:
+
 train_qs = pd.Series(df_train['question1'].tolist() + df_train['question2'].tolist()).astype(str)
 test_qs = pd.Series(df_test['question1'].tolist() + df_test['question2'].tolist()).astype(str)
 
@@ -63,7 +128,19 @@ plt.legend()
 plt.xlabel('Number of characters', fontsize=15)
 plt.ylabel('Probability', fontsize=15)
 
-print('mean-train {:.2f} std-train {:.2f} mean-test {:.2f} std-test {:.2f} max-train {:.2f} max-test {:.2f}'.format(dist_train.mean(), dist_train.std(), dist_test.mean(), dist_test.std(), dist_train.max(), dist_test.max()))
+print('mean-train {:.2f} std-train {:.2f} mean-test {:.2f} std-test {:.2f} max-train {:.2f} max-test {:.2f}'.format(dist_train.mean(), 
+                          dist_train.std(), dist_test.mean(), dist_test.std(), dist_train.max(), dist_test.max()))
+
+
+# We can see that most questions have anywhere from 15 to 150 characters in them. It seems that the test distribution is a little different from the train one, but not too much so (I can't tell if it is just the larger data reducing noise, but it also seems like the distribution is a lot smoother in the test set).
+# 
+# One thing that catches my eye is the steep cut-off at 150 characters for the training set, for most questions, while the test set slowly decreases after 150. Could this be some sort of Quora question size limit?
+# 
+# It's also worth noting that I've truncated this histogram at 200 characters, and that the max of the distribution is at just under 1200 characters for both sets - although samples with over 200 characters are very rare.
+# 
+# Let's do the same for word count. I'll be using a naive method for splitting words (splitting on spaces instead of using a serious tokenizer), although this should still give us a good idea of the distribution.
+
+# In[ ]:
 
 dist_train = train_qs.apply(lambda x: len(x.split(' ')))
 dist_test = test_qs.apply(lambda x: len(x.split(' ')))
@@ -76,15 +153,29 @@ plt.legend()
 plt.xlabel('Number of words', fontsize=15)
 plt.ylabel('Probability', fontsize=15)
 
-print('mean-train {:.2f} std-train {:.2f} mean-test {:.2f} std-test {:.2f} max-train {:.2f} max-test {:.2f}'.format(dist_train.mean(), dist_train.std(), dist_test.mean(), dist_test.std(), dist_train.max(), dist_test.max()))
-                          
+print('mean-train {:.2f} std-train {:.2f} mean-test {:.2f} std-test {:.2f} max-train {:.2f} max-test {:.2f}'.format(dist_train.mean(), 
+                          dist_train.std(), dist_test.mean(), dist_test.std(), dist_train.max(), dist_test.max()))
+
+
+# We see a similar distribution for word count, with most questions being about 10 words long. It looks to me like the distribution of the training set seems more "pointy", while on the test set it is wider. Nevertheless, they are quite similar.
+# 
+# So what are the most common words? Let's take a look at a word cloud.
+
+# In[ ]:
+
 from wordcloud import WordCloud
 cloud = WordCloud(width=1440, height=1080).generate(" ".join(train_qs.astype(str)))
 plt.figure(figsize=(20, 15))
 plt.imshow(cloud)
 plt.axis('off')
 
-#SEMANTIC ANALYSIS
+
+# ## Semantic Analysis
+# 
+# Next, I will take a look at usage of different punctuation in questions - this may form a basis for some interesting features later on.
+
+# In[11]:
+
 qmarks = np.mean(train_qs.apply(lambda x: '?' in x))
 math = np.mean(train_qs.apply(lambda x: '[math]' in x))
 fullstop = np.mean(train_qs.apply(lambda x: '.' in x))
@@ -98,7 +189,128 @@ print('Questions with full stops: {:.2f}%'.format(fullstop * 100))
 print('Questions with capitalised first letters: {:.2f}%'.format(capital_first * 100))
 print('Questions with capital letters: {:.2f}%'.format(capitals * 100))
 print('Questions with numbers: {:.2f}%'.format(numbers * 100))
-#Initial Feature Analysis
+
+
+# ## Normalization
+
+# In[ ]:
+
+#TODO Delete this line in production
+df_train = df_train.head()
+
+
+# ### Stemming and Lemmitizing
+
+# In[78]:
+
+def extractStemList(x):
+    porter = nltk.PorterStemmer()
+    return [porter.stem(t) for t in word_tokenize(x)]
+
+def extractLemmaList(x):
+    wnl = nltk.WordNetLemmatizer()
+    return [wnl.lemmatize(t) for t in word_tokenize(x)]
+    
+
+
+# In[79]:
+
+from nltk import word_tokenize
+import nltk
+for i in range(1,3):
+    df_train['question'+i+'_stemmed'] = df_train['question'+i].apply(extractStemList)
+    df_train['question'+i+'_lemmed'] = df_train['question'+i].apply(extractLemmaList)
+
+df_train.head()
+
+
+# ### POS tagging
+
+# In[149]:
+
+#some help funcs
+#nltk.help.upenn_tagset('RB')
+#nltk.name.readme()
+
+def extractPOSList(x):
+    return nltk.pos_tag(word_tokenize(x))
+
+df_train['question1'].apply(extractPOSList)
+
+
+# #### Manual POS tagging performance(debug)
+
+# In[120]:
+
+from nltk.corpus import brown
+
+brown_tagged_sents = brown.tagged_sents(categories='news')
+brown_sents = brown.sents(categories='news')
+
+patterns = [
+	(r'.*ing$', 'VBG'), # gerunds
+	(r'.*ed$', 'VBD'), # simple past
+	(r'.*es$', 'VBZ'), # 3rd singular present
+	(r'.*ould$', 'MD'), # modals
+	(r'.*\'s$', 'NN$'), # possessive nouns
+	(r'.*s$', 'NNS'), # plural nouns
+	(r'^-?[0-9]+(.[0-9]+)?$', 'CD'), # cardinal numbers
+	(r'.*', 'NN') # nouns (default)
+]
+regexp_tagger = nltk.RegexpTagger(patterns)
+regexp_tagger.tag(brown_sents[3])
+regexp_tagger.evaluate(brown_tagged_sents)
+i=0
+np.sum([value[1]==brown_tagged_sents[3][i][1] for i,value in enumerate(nltk.pos_tag(brown_sents[3])) ])/len(brown_sents[3])
+
+
+#for key,value in brown_tagged_sents[3]:
+ #   print("%10s %10s" % (key, value))
+    
+#brown_tagged_sents[3] == nltk.pos_tag(brown_sents[3])
+
+
+# ### WordNet
+
+# In[ ]:
+
+#nltk.app.wordnet()
+
+#right = wn.synset('right_whale.n.01')
+#orca = wn.synset('orca.n.01')
+#minke = wn.synset('minke_whale.n.01')
+#tortoise = wn.synset('tortoise.n.01')
+#novel = wn.synset('novel.n.01')
+#right.lowest_common_hypernyms(minke)
+#[Synset('baleen_whale.n.01')]
+#right.lowest_common_hypernyms(orca)
+#[Synset('whale.n.02')]
+#right.lowest_common_hypernyms(tortoise)
+#[Synset('vertebrate.n.01')]
+#right.lowest_common_hypernyms(novel)
+#[Synset('entity.n.01')]
+#right.path_similarity(minke)
+
+
+
+
+
+# ### Named entity extraction
+
+# In[155]:
+
+from nltk.tag import StanfordNERTagger
+
+#st = StanfordNERTagger() #TODO
+nltk.ne_chunk(df_train['question1'].apply(extractPOSList)[0],binary=True)
+
+
+# # Initial Feature Analysis
+# 
+# Before we create a model, we should take a look at how powerful some features are. I will start off with the word share feature from the benchmark model.
+
+# In[12]:
+
 from nltk.corpus import stopwords
 
 stops = set(stopwords.words("english"))
@@ -127,7 +339,41 @@ plt.hist(train_word_match[df_train['is_duplicate'] == 1], bins=20, normed=True, 
 plt.legend()
 plt.title('Label distribution over word_match_share', fontsize=15)
 plt.xlabel('word_match_share', fontsize=15)
-#TF-IDF
+
+
+# Here we can see that this feature has quite a lot of predictive power, as it is good at separating the duplicate questions from the non-duplicate ones. Interestingly, it seems very good at identifying questions which are definitely different, but is not so great at finding questions which are definitely duplicates.
+
+# ## RTE 
+
+# In[ ]:
+
+def rte_features(rtepair):
+    extractor = nltk.RTEFeatureExtractor(rtepair)
+    features = {}
+    features['word_overlap'] = len(extractor.overlap('word'))
+    features['word_hyp_extra'] = len(extractor.hyp_extra('word'))
+    features['ne_overlap'] = len(extractor.overlap('ne'))
+    features['ne_hyp_extra'] = len(extractor.hyp_extra('ne'))
+    return features
+
+rtepair = nltk.corpus.rte.pairs(['rte3_dev.xml'])[33]
+extractor = nltk.RTEFeatureExtractor(rtepair)
+
+
+# In[157]:
+
+print(nltk.corpus.rte.pairs(['rte3_dev.xml'])[33])
+
+
+# 
+# ## TF-IDF
+# 
+# I'm now going to try to improve this feature, by using something called TF-IDF (term-frequency-inverse-document-frequency). This means that we weigh the terms by how **uncommon** they are, meaning that we care more about rare words existing in both questions than common one. This makes sense, as for example we care more about whether the word "exercise" appears in both than the word "and" - as uncommon words will be more indicative of the content.
+# 
+# You may want to look into using sklearn's [TfidfVectorizer](http://scikit-learn.org/stable/modules/generated/sklearn.feature_extraction.text.TfidfVectorizer.html) to compute weights if you are implementing this yourself, but as I am too lazy to read the documentation I will write a version in pure python with a few changes which I believe should help the score.
+
+# In[ ]:
+
 from collections import Counter
 
 # If a word appears only once, we ignore it completely (likely a typo)
@@ -143,10 +389,16 @@ words = (" ".join(train_qs)).lower().split()
 counts = Counter(words)
 weights = {word: get_weight(count) for word, count in counts.items()}
 
+
+# In[ ]:
+
 print('Most common words and weights: \n')
 print(sorted(weights.items(), key=lambda x: x[1] if x[1] > 0 else 9999)[:10])
 print('\nLeast common words and weights: ')
 (sorted(weights.items(), key=lambda x: x[1], reverse=True)[:10])
+
+
+# In[ ]:
 
 def tfidf_word_match_share(row):
     q1words = {}
@@ -167,6 +419,9 @@ def tfidf_word_match_share(row):
     R = np.sum(shared_weights) / np.sum(total_weights)
     return R
 
+
+# In[ ]:
+
 plt.figure(figsize=(15, 5))
 tfidf_train_word_match = df_train.apply(tfidf_word_match_share, axis=1, raw=True)
 plt.hist(tfidf_train_word_match[df_train['is_duplicate'] == 0].fillna(0), bins=20, normed=True, label='Not Duplicate')
@@ -175,11 +430,23 @@ plt.legend()
 plt.title('Label distribution over tfidf_word_match_share', fontsize=15)
 plt.xlabel('word_match_share', fontsize=15)
 
+
+# In[ ]:
+
 from sklearn.metrics import roc_auc_score
 print('Original AUC:', roc_auc_score(df_train['is_duplicate'], train_word_match))
 print('   TFIDF AUC:', roc_auc_score(df_train['is_duplicate'], tfidf_train_word_match.fillna(0)))
 
-#Rebalancing the Data
+
+# So it looks like our TF-IDF actually got _worse_ in terms of overall AUC, which is a bit disappointing. (I am using the AUC metric since it is unaffected by scaling and similar, so it is a good metric for testing the predictive power of individual features.
+# 
+# However, I still think that this feature should provide some extra information which is not provided by the original feature. Our next job is to combine these features and use it to make a prediction. For this, I will use our old friend XGBoost to make a classification model.
+# 
+# ## Rebalancing the Data
+# However, before I do this, I would like to rebalance the data that XGBoost receives, since we have 37% positive class in our training data, and only 17% in the test data. By re-balancing the data so our training set has 17% positives, we can ensure that XGBoost outputs probabilities that will better match the data on the leaderboard, and should get a better score (since LogLoss looks at the probabilities themselves and not just the order of the predictions like AUC)
+
+# In[ ]:
+
 # First we create our training and testing data
 x_train = pd.DataFrame()
 x_test = pd.DataFrame()
@@ -189,6 +456,9 @@ x_test['word_match'] = df_test.apply(word_match_share, axis=1, raw=True)
 x_test['tfidf_word_match'] = df_test.apply(tfidf_word_match_share, axis=1, raw=True)
 
 y_train = df_train['is_duplicate'].values
+
+
+# In[ ]:
 
 pos_train = x_train[y_train == 1]
 neg_train = x_train[y_train == 0]
@@ -206,12 +476,22 @@ print(len(pos_train) / (len(pos_train) + len(neg_train)))
 x_train = pd.concat([pos_train, neg_train])
 y_train = (np.zeros(len(pos_train)) + 1).tolist() + np.zeros(len(neg_train)).tolist()
 del pos_train, neg_train
+
+
+# In[ ]:
+
 # Finally, we split some of the data off for validation
 from sklearn.cross_validation import train_test_split
 
 x_train, x_valid, y_train, y_valid = train_test_split(x_train, y_train, test_size=0.2, random_state=4242)
 
-###XGBoost
+
+# ## XGBoost
+# 
+# Now we can finally run XGBoost on our data, in order to see the score on the leaderboard!
+
+# In[ ]:
+
 import xgboost as xgb
 
 # Set our parameters for xgboost
@@ -228,6 +508,9 @@ watchlist = [(d_train, 'train'), (d_valid, 'valid')]
 
 bst = xgb.train(params, d_train, 400, watchlist, early_stopping_rounds=50, verbose_eval=10)
 
+
+# In[ ]:
+
 d_test = xgb.DMatrix(x_test)
 p_test = bst.predict(d_test)
 
@@ -236,3 +519,5 @@ sub['test_id'] = df_test['test_id']
 sub['is_duplicate'] = p_test
 sub.to_csv('simple_xgb.csv', index=False)
 
+
+# **0.35460** on the leaderboard - a good first score!
